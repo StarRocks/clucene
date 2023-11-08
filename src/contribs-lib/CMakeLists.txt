@@ -101,7 +101,7 @@ ENDIF ( USE_SHARED_OBJECT_FILES )
 INCLUDE_DIRECTORIES( ${clucene_SOURCE_DIR}/src/core )
 INCLUDE_DIRECTORIES( ${clucene_SOURCE_DIR}/src/contribs-lib )
 
-add_library(clucene-contribs-lib SHARED
+add_library(clucene-contribs-lib STATIC
 	${clucene_contribs_Files} ${clucene_shared_Files} ${HEADERS}
 )
 TARGET_LINK_LIBRARIES(clucene-contribs-lib ${clucene_contrib_extra_libs})
@@ -112,3 +112,15 @@ SET_TARGET_PROPERTIES(clucene-contribs-lib PROPERTIES
     SOVERSION ${CLUCENE_SOVERSION}
     COMPILE_DEFINITIONS_DEBUG _DEBUG
 )
+
+install(TARGETS clucene-contribs-lib
+	DESTINATION ${LIB_DESTINATION}
+	COMPONENT development )
+
+install(FILES ${clucene_SOURCE_DIR}/src/contribs-lib/CLucene/analysis/cjk/CJKAnalyzer.h
+	DESTINATION include/CLucene/analysis/cjk
+	COMPONENT development )
+
+install(FILES ${clucene_SOURCE_DIR}/src/contribs-lib/CLucene/analysis/LanguageBasedAnalyzer.h
+	DESTINATION include/CLucene/analysis
+	COMPONENT development )

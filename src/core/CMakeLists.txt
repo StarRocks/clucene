@@ -1,5 +1,5 @@
 PROJECT(clucene-core)
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" "${clucene-shared_SOURCE_DIR}/cmake")
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" "${clucene_SOURCE_DIR}/cmake" "${clucene-shared_SOURCE_DIR}/cmake")
 
 #define command line options
 INCLUDE (DefineOptions)
@@ -185,22 +185,22 @@ file(GLOB_RECURSE HEADERS ${clucene-core_SOURCE_DIR}/*.h)
 
 #create the libraries
 INCLUDE_DIRECTORIES( ${clucene_SOURCE_DIR}/src/core )
+IF ( BUILD_SHARED_LIBRARIES )
+	add_library(clucene-core SHARED
+			${clucene_core_Files} ${clucene_shared_Files} ${HEADERS}
+			)
+	#set properties on the libraries
+	SET_TARGET_PROPERTIES(clucene-core PROPERTIES
+		VERSION ${CLUCENE_VERSION}
+		SOVERSION ${CLUCENE_SOVERSION}
+		COMPILE_DEFINITIONS_DEBUG _DEBUG
+	)
 
-add_library(clucene-core SHARED
-	${clucene_core_Files} ${clucene_shared_Files} ${HEADERS}
-)
-
-#set properties on the libraries
-SET_TARGET_PROPERTIES(clucene-core PROPERTIES
-    VERSION ${CLUCENE_VERSION}
-    SOVERSION ${CLUCENE_SOVERSION}
-    COMPILE_DEFINITIONS_DEBUG _DEBUG
-)
-
-#link the clucene-core library against the releavent clucene-shared library (if we aren't using the object files)
-IF ( NOT USE_SHARED_OBJECT_FILES )
-    TARGET_LINK_LIBRARIES(clucene-core clucene-shared ${EXTRA_LIBS})
-ENDIF ( NOT USE_SHARED_OBJECT_FILES )
+	#link the clucene-core library against the releavent clucene-shared library (if we aren't using the object files)
+	IF ( NOT USE_SHARED_OBJECT_FILES )
+		TARGET_LINK_LIBRARIES(clucene-core clucene-shared ${EXTRA_LIBS})
+	ENDIF ( NOT USE_SHARED_OBJECT_FILES )
+ENDIF ( BUILD_SHARED_LIBRARIES )
 
 
 IF ( BUILD_STATIC_LIBRARIES )
@@ -277,10 +277,15 @@ ELSE ( LUCENE_SYS_INCLUDES )
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/CLuceneConfig.cmake 
             DESTINATION include/CLucene
             COMPONENT development)
+	install(FILES ${clucene-shared_BINARY_DIR}/CLucene/util/Misc.h
+			DESTINATION include/CLucene/util
+			COMPONENT development)
 ENDIF ( LUCENE_SYS_INCLUDES )
 
 
-#and install library
-install(TARGETS clucene-core 
-        DESTINATION ${LIB_DESTINATION}  
-        COMPONENT runtime )
+IF ( BUILD_SHARED_LIBRARIES )
+	#and install library
+	install(TARGETS clucene-core
+			DESTINATION ${LIB_DESTINATION}
+			COMPONENT runtime )
+ENDIF ( BUILD_SHARED_LIBRARIES )
