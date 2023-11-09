@@ -89,7 +89,7 @@ OPTION(ENABLE_PACKAGING
   OFF)
 OPTION(BUILD_STATIC_LIBRARIES
   "create targets for building static libraries"
-  ON)
+  OFF)
 OPTION(BUILD_CONTRIBS
   "create targets for building the clucene-contribs"
   OFF)
@@ -129,13 +129,10 @@ ELSEIF ("${CMAKE_BUILD_TYPE}" STREQUAL "LSAN")
     SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_FLAGS_LSAN}")
 ENDIF()
 
-IF (USE_AVX2)
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_AVX2")
-ENDIF()
 IF (__COMPILER_CLANG)
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++11-narrowing")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++11-narrowing")
 ELSE ()
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-narrowing")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-narrowing")
 ENDIF ()
 
 #check flags...
