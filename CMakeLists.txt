@@ -19,8 +19,12 @@ SET(CLUCENE_VERSION "${CLUCENE_VERSION_MAJOR}.${CLUCENE_VERSION_MINOR}.${CLUCENE
 #CMake 2.6+ is recommended to an improved Boost module
 CMAKE_MINIMUM_REQUIRED(VERSION 2.4.0 FATAL_ERROR)
 
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+
 if(COMMAND cmake_policy)
   cmake_policy(SET CMP0003 NEW)
+  cmake_policy(SET CMP0043 NEW)
+  cmake_policy(SET CMP0054 NEW)
 endif(COMMAND cmake_policy)
 
 #set various platform specific global options
@@ -71,6 +75,9 @@ IF(CMAKE_COMPILER_IS_GNUCXX)
   ENDIF(MINGW OR CYGWIN)
 ENDIF(CMAKE_COMPILER_IS_GNUCXX)
 
+# disable ansi mode
+SET(ENABLE_ANSI_MODE OFF)
+
 OPTION(ENABLE_ANSI_MODE
   "compile with -ansi flag"
   ${ENABLE_ANSI_MODE})
@@ -107,6 +114,27 @@ OPTION(ENABLE_COMPILE_TESTS
   "enable various projects that test alternative build switches"
   ${ENABLE_COMPILE_TESTS_VALUE})
 
+IF (__COMPILER_CLANG)
+    SET(CXX_FLAGS_ASAN "${CXX_GCC_FLAGS} -O0 -g -fsanitize=address -DADDRESS_SANITIZER")
+    SET(CXX_FLAGS_LSAN "${CXX_GCC_FLAGS} -O0 -g -fsanitize=leak -DLEAK_SANITIZER")
+ELSE ()
+    SET(CXX_FLAGS_ASAN "${CXX_GCC_FLAGS} -O0 -g -fsanitize=address -DADDRESS_SANITIZER -static-libasan")
+    SET(CXX_FLAGS_LSAN "${CXX_GCC_FLAGS} -O0 -g -fsanitize=leak -DLEAK_SANITIZER -static-liblsan")
+ENDIF ()
+
+# Set compile flags based on the build type.
+IF ("${CMAKE_BUILD_TYPE}" STREQUAL "ASAN")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_FLAGS_ASAN}")
+ELSEIF ("${CMAKE_BUILD_TYPE}" STREQUAL "LSAN")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_FLAGS_LSAN}")
+ENDIF()
+
+IF (__COMPILER_CLANG)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++11-narrowing")
+ELSE ()
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-narrowing")
+ENDIF ()
+
 #check flags...
 INCLUDE (TestCXXAcceptsFlag)
 IF ( CMAKE_COMPILER_IS_GNUCC )
@@ -127,10 +155,6 @@ IF ( CMAKE_COMPILER_IS_GNUCC )
     IF("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
         SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC"  )
     ENDIF("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
-
-   IF( ENABLE_ANSI_MODE )
-    SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ansi")
-   ENDIF ( ENABLE_ANSI_MODE )
 ENDIF(CMAKE_COMPILER_IS_GNUCC) 
 
 
@@ -138,6 +162,7 @@ ENDIF(CMAKE_COMPILER_IS_GNUCC)
 SET(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin CACHE PATH "Executable Output Directory" FORCE)
 SET(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin CACHE PATH "Library Output Directory" FORCE)
 
+OPTION(ENABLE_TESTS "Enable tests" OFF)
 #add tests
 ENABLE_TESTING()
 ADD_TEST(SimpleTest ${EXECUTABLE_OUTPUT_PATH}/cl_test )
@@ -163,7 +188,7 @@ IF ( BUILD_CONTRIBS )
   SET(BUILD_CONTRIBS_LIB 1)
 ENDIF ( BUILD_CONTRIBS )
 IF ( BUILD_CONTRIBS_LIB )
-  ADD_SUBDIRECTORY (src/contribs-lib EXCLUDE_FROM_ALL)
+  ADD_SUBDIRECTORY (src/contribs-lib)
 ENDIF ( BUILD_CONTRIBS_LIB )
 
 
@@ -173,10 +198,11 @@ CONFIGURE_FILE(
   "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
   IMMEDIATE @ONLY)
   
-ADD_CUSTOM_TARGET(uninstall
-  "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake")
+#ADD_CUSTOM_TARGET(uninstall "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake")
 
 #this must go last...
 IF (ENABLE_PACKAGING)
   INCLUDE(CreateClucenePackages)
 ENDIF ( ENABLE_PACKAGING)
+
+SET(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")

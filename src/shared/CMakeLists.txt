@@ -1,4 +1,5 @@
 PROJECT(clucene-shared)
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" "${clucene_SOURCE_DIR}/cmake" "${clucene-shared_SOURCE_DIR}/cmake")
 
 #define command line options
 INCLUDE (DefineOptions)
@@ -272,6 +273,7 @@ ENDIF ( NOT HAVE_TYPE__TIMEB AND NOT _CL_HAVE_FUNCTION_GETTIMEOFDAY )
 #now write out our configuration....
 CONFIGURE_FILE(${clucene-shared_SOURCE_DIR}/CLucene/clucene-config.h.cmake ${clucene-shared_BINARY_DIR}/CLucene/clucene-config.h)
 CONFIGURE_FILE(${clucene-shared_SOURCE_DIR}/CLucene/_clucene-config.h.cmake ${clucene-shared_BINARY_DIR}/CLucene/_clucene-config.h)
+CONFIGURE_FILE(${clucene-shared_SOURCE_DIR}/CLucene/util/Misc.h ${clucene-shared_BINARY_DIR}/CLucene/util/Misc.h)
 
 #add the files to our groups
 SOURCE_GROUP("config" ./CLucene/config/*)
@@ -323,25 +325,25 @@ GET_SHARED_FILES(clucene_shared_Files ".")
 
 #find our headers
 file(GLOB_RECURSE HEADERS ${clucene-shared_SOURCE_DIR}/*.h)
+IF ( BUILD_SHARED_LIBRARIES )
+    add_library(clucene-shared SHARED
+        ${clucene_shared_Files} ${HEADERS}
+    )
+    #set properties on the libraries
+    SET_TARGET_PROPERTIES(clucene-shared PROPERTIES
+        VERSION ${CLUCENE_VERSION}
+        SOVERSION ${CLUCENE_SOVERSION}
+        COMPILE_DEFINITIONS_DEBUG _DEBUG
+    )
+    TARGET_LINK_LIBRARIES(clucene-shared ${CMAKE_THREAD_LIBS_INIT})
+    IF ( EXTRA_LIBS )
+      TARGET_LINK_LIBRARIES(clucene-shared ${EXTRA_LIBS})
+    ENDIF ( EXTRA_LIBS )
 
-add_library(clucene-shared SHARED
-	${clucene_shared_Files} ${HEADERS}
-)
-
-#set properties on the libraries
-SET_TARGET_PROPERTIES(clucene-shared PROPERTIES
-    VERSION ${CLUCENE_VERSION}
-    SOVERSION ${CLUCENE_SOVERSION}
-    COMPILE_DEFINITIONS_DEBUG _DEBUG
-)
-TARGET_LINK_LIBRARIES(clucene-shared ${CMAKE_THREAD_LIBS_INIT})
-IF ( EXTRA_LIBS )
-  TARGET_LINK_LIBRARIES(clucene-shared ${EXTRA_LIBS})
-ENDIF ( EXTRA_LIBS )
-
-install(TARGETS clucene-shared 
-        DESTINATION ${LIB_DESTINATION} 
-        COMPONENT development )
+    install(TARGETS clucene-shared
+            DESTINATION ${LIB_DESTINATION}
+            COMPONENT development )
+ENDIF ( BUILD_SHARED_LIBRARIES )
 
 IF ( BUILD_STATIC_LIBRARIES )
 	add_library(clucene-shared-static STATIC
