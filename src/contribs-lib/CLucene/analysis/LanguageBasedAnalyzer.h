@@ -11,6 +11,27 @@
 
 CL_NS_DEF(analysis)
 
+class SavedStreams {
+public:
+  Tokenizer* tokenStream;
+  TokenStream* filteredTokenStream;
+
+  SavedStreams():tokenStream(NULL), filteredTokenStream(NULL)
+  {
+  }
+
+  ~SavedStreams()
+  {
+    // no need to release token stream implicitly when it is not null
+    // cause `FilteredTokenStream` will release it cascade
+    if (filteredTokenStream) {
+      _CLDELETE(filteredTokenStream);
+    } else if (tokenStream) {
+      _CLDELETE(tokenStream);
+    }
+  }
+};
+
 class CLUCENE_CONTRIBS_EXPORT LanguageBasedAnalyzer: public CL_NS(analysis)::Analyzer{
 	TCHAR lang[100];
 	bool stem;
@@ -20,6 +41,9 @@ public:
 	void setLanguage(const TCHAR* language);
 	void setStem(bool stem);
 	TokenStream* tokenStream(const TCHAR* fieldName, CL_NS(util)::Reader* reader);
+        TokenStream* reusableTokenStream(const TCHAR* fieldName, CL_NS(util)::Reader* reader);
+      private:
+        SavedStreams* _save_streams = NULL;
   };
 
 CL_NS_END
