@@ -28,12 +28,46 @@ LanguageBasedAnalyzer::LanguageBasedAnalyzer(const TCHAR* language, bool stem)
 	this->stem = stem;
 }
 LanguageBasedAnalyzer::~LanguageBasedAnalyzer(){
+  if (_save_streams) {
+         _CLDELETE(_save_streams)
+  }
 }
 void LanguageBasedAnalyzer::setLanguage(const TCHAR* language){
 	_tcsncpy(lang,language,100);
 }
 void LanguageBasedAnalyzer::setStem(bool stem){
 	this->stem = stem;
+}
+TokenStream* LanguageBasedAnalyzer::reusableTokenStream(const TCHAR* fieldName, CL_NS(util)::Reader* reader) {
+        if (!_save_streams) {
+         _save_streams = _CLNEW SavedStreams();
+         if (_tcscmp(lang, _T("cjk")) == 0) {
+           _save_streams->tokenStream = _CLNEW CL_NS2(analysis, cjk)::CJKTokenizer(reader);
+           return _save_streams->tokenStream;
+         } else {
+           CL_NS(util)::BufferedReader* bufferedReader = reader->__asBufferedReader();
+
+           if (bufferedReader) {
+             _save_streams->tokenStream = _CLNEW StandardTokenizer(
+                 _CLNEW CL_NS(util)::FilteredBufferedReader(reader, false), true);
+           } else {
+             _save_streams->tokenStream = _CLNEW StandardTokenizer(bufferedReader);
+           }
+
+           _save_streams->filteredTokenStream = _CLNEW StandardFilter(_save_streams->tokenStream, true);
+           if (stem) {
+             _save_streams->filteredTokenStream = _CLNEW SnowballFilter( _save_streams->filteredTokenStream, lang, true);
+           }
+           _save_streams->filteredTokenStream =
+               _CLNEW LowerCaseFilter(_save_streams->filteredTokenStream, true);
+           return _save_streams->filteredTokenStream;
+         }
+        } else {
+         _save_streams->tokenStream->reset(reader);
+         return _save_streams -> filteredTokenStream
+                    ? _save_streams -> filteredTokenStream
+                    : _save_streams -> tokenStream;
+        }
 }
 TokenStream* LanguageBasedAnalyzer::tokenStream(const TCHAR* fieldName, Reader* reader) {
 	TokenStream* ret = NULL;
@@ -54,10 +88,10 @@ TokenStream* LanguageBasedAnalyzer::tokenStream(const TCHAR* fieldName, Reader* 
 		if ( stem ) //hmm... this could be configured seperately from stem
 			ret = _CLNEW ISOLatin1AccentFilter(ret, true); //todo: this should really only be applied to latin languages...
 
-		//lower case after the latin1 filter
+                //lower case after the latin1 filter
 		ret = _CLNEW LowerCaseFilter(ret,true);
 	}
-	//todo: could add a stop filter based on the language - need to fix the stoplist loader first
+        //todo: could add a stop filter based on the language - need to fix the stoplist loader first
 
 	return ret;
 }
