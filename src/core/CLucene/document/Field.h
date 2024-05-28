@@ -290,6 +290,9 @@ public:
 	/** Expert: change the value of this field.  See <a href="#setValue(TCHAR*)">setValue(TCHAR*)</a>. */
 	void setValue(CL_NS(analysis)::TokenStream* value);
 
+	/** Caller should be responsible for always the reference pass for fieldsData */
+	void setValueRef(TCHAR* value);
+
 	virtual const char* getObjectName() const;
 	static const char* getClassName();
 
@@ -309,6 +312,7 @@ protected:
 	const TCHAR* _name;
 	uint32_t config;
 	float_t boost;
+	bool isDuplicateValue;
 };
 CL_NS_END
 #endif

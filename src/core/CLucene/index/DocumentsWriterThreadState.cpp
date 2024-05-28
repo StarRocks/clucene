@@ -33,6 +33,7 @@
 #include "_DocumentsWriter.h"
 #include <assert.h>
 #include <iostream>
+#include <immintrin.h>
 
 CL_NS_USE(util)
 CL_NS_USE(store)
@@ -582,6 +583,38 @@ bool DocumentsWriter::ThreadState::postingEquals(const TCHAR* tokenText, const i
   int32_t pos = p->textStart & CHAR_BLOCK_MASK;
 
   int32_t tokenPos = 0;
+
+#ifdef _AVX2
+  constexpr auto AVX2_SIZE = sizeof(__m256i);
+  constexpr auto tcharSize = sizeof(TCHAR);
+  size_t tcharBytes = tokenTextLen * tcharSize;
+  int loop = 0;
+  if (tcharBytes >= AVX2_SIZE) {
+    const __m256i* p1 = reinterpret_cast<const __m256i*>(tokenText + tokenPos);
+    const __m256i* p2 = reinterpret_cast<const __m256i*>(text + pos);
+    __m256i all_ones = _mm256_set1_epi8(0xFF);
+    loop = tcharBytes / AVX2_SIZE;
+    for (int i = 0; i < loop; ++i) {
+        if (i < loop - 2) {
+          _mm_prefetch(reinterpret_cast<const char*>(p1) + AVX2_SIZE * 2, _MM_HINT_T0);
+          _mm_prefetch(reinterpret_cast<const char*>(p2) + AVX2_SIZE * 2, _MM_HINT_T0);
+        }
+
+        __m256i v1 = _mm256_loadu_si256(p1++);
+        __m256i v2 = _mm256_loadu_si256(p2++);
+        __m256i cmp = _mm256_cmpeq_epi8(v1, v2);
+
+        if (!_mm256_testc_si256(cmp, all_ones)) { // Not all bytes are equal
+            return false;
+        }
+    }
+  }
+  if (loop != 0) {
+    tokenPos += (loop * AVX2_SIZE / tcharSize);
+    pos += (loop * AVX2_SIZE / tcharSize);
+  }
+#endif
+
   for(;tokenPos<tokenTextLen;pos++,tokenPos++)
     if (tokenText[tokenPos] != text[pos])
       return false;
@@ -1062,8 +1095,6 @@ void DocumentsWriter::ThreadState::FieldData::addPosition(Token* token) {
           }
         }
 
-        proxCode = position;
-
         threadState->p->docFreq = 1;
 
         // Store code so we can write this after we're
@@ -1075,8 +1106,6 @@ void DocumentsWriter::ThreadState::FieldData::addPosition(Token* token) {
          //std::cout << "    seen before (same docID=" << threadState->docID << ") proxUpto=" << threadState->p->proxUpto << "\n";
 
         threadState->p->docFreq++;
-
-        proxCode = position - threadState->p->lastPosition;
 
         if (doVectors) {
           threadState->vector = threadState->p->vector;
@@ -1144,9 +1173,6 @@ void DocumentsWriter::ThreadState::FieldData::addPosition(Token* token) {
       const int32_t upto1 = threadState->postingsPool->newSlice(firstSize);
       threadState->p->freqStart = threadState->p->freqUpto = threadState->postingsPool->tOffset + upto1;
 
-      const int32_t upto2 = threadState->postingsPool->newSlice(firstSize);
-      threadState->p->proxStart = threadState->p->proxUpto = threadState->postingsPool->tOffset + upto2;
-
       threadState->p->lastDocCode = threadState->docID << 1;
       threadState->p->lastDocID = threadState->docID;
       threadState->p->docFreq = 1;
@@ -1158,23 +1184,7 @@ void DocumentsWriter::ThreadState::FieldData::addPosition(Token* token) {
           offsetEnd = offset + token->endOffset();
         }
       }
-
-      proxCode = position;
     }
-
-    threadState->proxUpto = threadState->p->proxUpto & BYTE_BLOCK_MASK;
-    threadState->prox = threadState->postingsPool->buffers[threadState->p->proxUpto >> BYTE_BLOCK_SHIFT];
-    assert (threadState->prox != NULL);
-
-    if (payload != NULL && payload->length() > 0) {
-      threadState->writeProxVInt((proxCode<<1)|1);
-      threadState->writeProxVInt(payload->length());
-      threadState->writeProxBytes(payload->getData().values, payload->getOffset(), payload->length());
-      fieldInfo->storePayloads = true;
-    } else
-      threadState->writeProxVInt(proxCode<<1);
-
-    threadState->p->proxUpto = threadState->proxUpto + (threadState->p->proxUpto & BYTE_BLOCK_NOT_MASK);
 
     threadState->p->lastPosition = position++;
 

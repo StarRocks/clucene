@@ -15,7 +15,7 @@ CL_NS_USE(util)
 CL_NS_DEF(document)
 
 Field::Field(const TCHAR* Name, Reader* reader, int config):
-	lazy(false)
+	lazy(false), isDuplicateValue(false)
 {
 	CND_PRECONDITION(Name != NULL, "Name cannot be NULL");
 	CND_PRECONDITION(reader != NULL, "reader cannot be NULL");
@@ -31,7 +31,7 @@ Field::Field(const TCHAR* Name, Reader* reader, int config):
 
 
 Field::Field(const TCHAR* Name, const TCHAR* Value, int _config, const bool duplicateValue):
-	lazy(false)
+	lazy(false), isDuplicateValue(duplicateValue)
 {
 	CND_PRECONDITION(Name != NULL, "Name cannot be NULL");
 	CND_PRECONDITION(Value != NULL, "value cannot be NULL");
@@ -59,7 +59,7 @@ Field::Field(const TCHAR* Name, const TCHAR* Value, int _config, const bool dupl
 }
 
 Field::Field(const TCHAR* Name, ValueArray<uint8_t>* Value, int config, bool duplicateValue):
-	lazy(false)
+	lazy(false), isDuplicateValue(duplicateValue)
 {
 	CND_PRECONDITION(Name != NULL, "Name cannot be NULL");
 	CND_PRECONDITION(Value != NULL, "value cannot be NULL");
@@ -81,7 +81,7 @@ Field::Field(const TCHAR* Name, ValueArray<uint8_t>* Value, int config, bool dup
 }
 
 Field::Field(const TCHAR* Name, int config):
-	lazy(false)
+	lazy(false), isDuplicateValue(false)
 {
 	CND_PRECONDITION(Name != NULL, "Name cannot be NULL");
 
@@ -137,6 +137,13 @@ void Field::setValue(TCHAR* value, const bool duplicateValue) {
 		fieldsData = stringDuplicate( value );
 	else
 		fieldsData = value;
+	valueType = VALUE_STRING;
+	isDuplicateValue = duplicateValue;
+}
+
+void Field::setValueRef(TCHAR* value) {
+	_resetValue();
+	fieldsData = value;
 	valueType = VALUE_STRING;
 }
 
@@ -295,7 +302,7 @@ TCHAR* Field::toString() {
 
 
 void Field::_resetValue() {
-	if (valueType & VALUE_STRING) {
+	if (valueType & VALUE_STRING && isDuplicateValue) {
 		TCHAR* t = static_cast<TCHAR*>(fieldsData);
 		_CLDELETE_CARRAY(t);
 	} else if (valueType & VALUE_READER) {
@@ -306,6 +313,7 @@ void Field::_resetValue() {
 		_CLDELETE(v);
 	}
 	valueType=VALUE_NONE;
+	isDuplicateValue = false;
 }
 const char* Field::getObjectName() const{
 	return getClassName();

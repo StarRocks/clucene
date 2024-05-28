@@ -30,6 +30,10 @@ MACRO (DEFINE_OPTIONS extraOptions extraLibs)
     SET (${extraOptions} "${${extraOptions}} -D_UNICODE")
   ENDIF(ENABLE_ASCII_MODE)
 
+  IF(USE_AVX2)
+    SET (${extraOptions} "${${extraOptions}} -D_AVX2")
+  ENDIF(USE_AVX2)
+
 	IF ( MSVC80 OR MSVC90)
 	    #todo: remove this once crt functions are fixed...
 		SET (${extraOptions} "${${extraOptions}} -D_CRT_SECURE_NO_DEPRECATE -D_CRT_NONSTDC_NO_DEPRECATE")

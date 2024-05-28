@@ -197,7 +197,6 @@ CL_NS_DEF(index)
       // make sure that all index files have been read or are kept open
       // so that if an index update removes them we'll still have them
       freqStream = cfsDir->openInput( (segment + ".frq").c_str(), readBufferSize);
-      proxStream = cfsDir->openInput( (segment + ".prx").c_str(), readBufferSize);
       openNorms(cfsDir, readBufferSize);
 
       if (doOpenStores && _fieldInfos->hasVectors()) { // open term vector files only as needed
