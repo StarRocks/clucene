@@ -552,7 +552,7 @@ void DocumentsWriter::writeSegment(std::vector<std::string>& flushedFiles) {
                                                  writer->getTermIndexInterval());
 
   IndexOutput* freqOut = directory->createOutput( (segmentName + ".frq").c_str() );
-  IndexOutput *proxOut = nullptr;
+  IndexOutput* proxOut = nullptr;
 
   // Gather all FieldData's that have postings, across all
   // ThreadStates

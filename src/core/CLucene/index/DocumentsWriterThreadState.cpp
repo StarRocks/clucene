@@ -608,8 +608,7 @@ bool DocumentsWriter::ThreadState::postingEquals(const TCHAR* tokenText, const i
             return false;
         }
     }
-  }
-  if (loop != 0) {
+
     tokenPos += (loop * AVX2_SIZE / tcharSize);
     pos += (loop * AVX2_SIZE / tcharSize);
   }
