@@ -552,7 +552,7 @@ void DocumentsWriter::writeSegment(std::vector<std::string>& flushedFiles) {
                                                  writer->getTermIndexInterval());
 
   IndexOutput* freqOut = directory->createOutput( (segmentName + ".frq").c_str() );
-  IndexOutput* proxOut = directory->createOutput( (segmentName + ".prx").c_str() );
+  IndexOutput* proxOut = nullptr;
 
   // Gather all FieldData's that have postings, across all
   // ThreadStates
@@ -602,8 +602,6 @@ void DocumentsWriter::writeSegment(std::vector<std::string>& flushedFiles) {
 
   freqOut->close();
   _CLDELETE(freqOut);
-  proxOut->close();
-  _CLDELETE(proxOut);
   termsOut->close();
   _CLDELETE(termsOut);
   _CLDELETE(skipListWriter);
@@ -611,7 +609,6 @@ void DocumentsWriter::writeSegment(std::vector<std::string>& flushedFiles) {
   // Record all files we have flushed
   flushedFiles.push_back(segmentFileName(IndexFileNames::FIELD_INFOS_EXTENSION));
   flushedFiles.push_back(segmentFileName(IndexFileNames::FREQ_EXTENSION));
-  flushedFiles.push_back(segmentFileName(IndexFileNames::PROX_EXTENSION));
   flushedFiles.push_back(segmentFileName(IndexFileNames::TERMS_EXTENSION));
   flushedFiles.push_back(segmentFileName(IndexFileNames::TERMS_INDEX_EXTENSION));
 
@@ -734,7 +731,7 @@ void DocumentsWriter::appendPostings(ArrayBase<ThreadState::FieldData*>* fields,
       pos++;
 
     int64_t freqPointer = freqOut->getFilePointer();
-    int64_t proxPointer = proxOut->getFilePointer();
+    int64_t proxPointer = 0;
 
     skipListWriter->resetSkip();
 
@@ -763,32 +760,6 @@ void DocumentsWriter::appendPostings(ArrayBase<ThreadState::FieldData*>* fields,
       lastDoc = doc;
 
       ByteSliceReader& prox = minState->prox;
-
-      // Carefully copy over the prox + payload info,
-      // changing the format to match Lucene's segment
-      // format.
-      for(int32_t j=0;j<termDocFreq;j++) {
-        const int32_t code = prox.readVInt();
-        if (currentFieldStorePayloads) {
-          int32_t payloadLength;
-          if ((code & 1) != 0) {
-            // This position has a payload
-            payloadLength = prox.readVInt();
-          } else
-            payloadLength = 0;
-          if (payloadLength != lastPayloadLength) {
-            proxOut->writeVInt(code|1);
-            proxOut->writeVInt(payloadLength);
-            lastPayloadLength = payloadLength;
-          } else
-            proxOut->writeVInt(code & (~1));
-          if (payloadLength > 0)
-            copyBytes(&prox, proxOut, payloadLength);
-        } else {
-          assert ( 0 == (code & 1) );
-          proxOut->writeVInt(code>>1);
-        }
-      }
 
       if (1 == termDocFreq) {
         freqOut->writeVInt(newDocCode|1);
@@ -1424,8 +1395,6 @@ bool DocumentsWriter::FieldMergeState::nextTerm(){
     freq.init(field->threadState->postingsPool, p->freqStart, p->freqUpto);
   else
     freq.bufferOffset = freq.upto = freq.endIndex = 0;
-
-  prox.init(field->threadState->postingsPool, p->proxStart, p->proxUpto);
 
   // Should always be true
   bool result = nextDoc();

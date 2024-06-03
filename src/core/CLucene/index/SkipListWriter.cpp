@@ -95,7 +95,6 @@ void DefaultSkipListWriter::setSkipData(int32_t doc, bool storePayloads, int32_t
   this->curStorePayloads = storePayloads;
   this->curPayloadLength = payloadLength;
   this->curFreqPointer = freqOutput->getFilePointer();
-  this->curProxPointer = proxOutput->getFilePointer();
 }
 
 void DefaultSkipListWriter::resetSkip() {
@@ -103,7 +102,6 @@ void DefaultSkipListWriter::resetSkip() {
   memset(lastSkipDoc, 0, numberOfSkipLevels * sizeof(int32_t) );
   Arrays<int32_t>::fill(lastSkipPayloadLength, numberOfSkipLevels, -1);  // we don't have to write the first length in the skip list
   Arrays<int64_t>::fill(lastSkipFreqPointer,   numberOfSkipLevels, freqOutput->getFilePointer());
-  Arrays<int64_t>::fill(lastSkipProxPointer,   numberOfSkipLevels, proxOutput->getFilePointer());
 }
 
 void DefaultSkipListWriter::writeSkipData(int32_t level, IndexOutput* skipBuffer){

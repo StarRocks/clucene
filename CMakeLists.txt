@@ -64,6 +64,10 @@ OPTION(ENABLE_DMALLOC
 OPTION(ENABLE_ASCII_MODE
   "enable ascii support"
   OFF)
+
+OPTION(USE_AVX2
+  "Build with AVX2 instruction"
+  OFF)
   
 SET(ENABLE_ANSI_MODE OFF)
 IF(CMAKE_COMPILER_IS_GNUCXX)
@@ -121,6 +125,12 @@ ELSE ()
     SET(CXX_FLAGS_ASAN "${CXX_GCC_FLAGS} -O0 -g -fsanitize=address -DADDRESS_SANITIZER -static-libasan")
     SET(CXX_FLAGS_LSAN "${CXX_GCC_FLAGS} -O0 -g -fsanitize=leak -DLEAK_SANITIZER -static-liblsan")
 ENDIF ()
+
+IF(USE_AVX2)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
+ENDIF(USE_AVX2)
+
+SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 
 # Set compile flags based on the build type.
 IF ("${CMAKE_BUILD_TYPE}" STREQUAL "ASAN")

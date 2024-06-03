@@ -246,20 +246,16 @@ DefaultSkipListReader::DefaultSkipListReader(CL_NS(store)::IndexInput* _skipStre
 		: MultiLevelSkipListReader(_skipStream, maxSkipLevels, _skipInterval)
 {
 	freqPointer = _CL_NEWARRAY(int64_t,maxSkipLevels);
-	proxPointer = _CL_NEWARRAY(int64_t,maxSkipLevels);
 	payloadLength = _CL_NEWARRAY(int32_t,maxSkipLevels);
   memset(freqPointer,0, sizeof(int64_t) * maxSkipLevels);
-  memset(proxPointer,0, sizeof(int64_t) * maxSkipLevels);
   memset(payloadLength,0, sizeof(int32_t) * maxSkipLevels);
   this->lastFreqPointer = 0;
-  this->lastProxPointer = 0;
   this->lastPayloadLength = 0;
   this->currentFieldStoresPayloads = false;
 }
 
 DefaultSkipListReader::~DefaultSkipListReader(){
 	_CLDELETE_LARRAY(freqPointer);
-	_CLDELETE_LARRAY(proxPointer);
 	_CLDELETE_LARRAY(payloadLength);
 }
 
@@ -267,11 +263,9 @@ void DefaultSkipListReader::init(const int64_t _skipPointer, const int64_t freqB
 	MultiLevelSkipListReader::init(_skipPointer, df);
 	this->currentFieldStoresPayloads = storesPayloads;
 	lastFreqPointer = freqBasePointer;
-	lastProxPointer = proxBasePointer;
 
 	for (int32_t j=0; j<maxNumberOfSkipLevels; j++){
 		freqPointer[j] = freqBasePointer;
-		proxPointer[j] = proxBasePointer;
 		payloadLength[j] = 0;
 	}
 }
@@ -280,7 +274,7 @@ int64_t DefaultSkipListReader::getFreqPointer() const {
 	return lastFreqPointer;
 }
 int64_t DefaultSkipListReader::getProxPointer() const {
-	return lastProxPointer;
+	return 0;
 }
 int32_t DefaultSkipListReader::getPayloadLength() const {
 	return lastPayloadLength;
@@ -289,14 +283,12 @@ int32_t DefaultSkipListReader::getPayloadLength() const {
 void DefaultSkipListReader::seekChild(const int32_t level) {
 	MultiLevelSkipListReader::seekChild(level);
 	freqPointer[level] = lastFreqPointer;
-	proxPointer[level] = lastProxPointer;
 	payloadLength[level] = lastPayloadLength;
 }
 
 void DefaultSkipListReader::setLastSkipData(const int32_t level) {
 	MultiLevelSkipListReader::setLastSkipData(level);
 	lastFreqPointer = freqPointer[level];
-	lastProxPointer = proxPointer[level];
 	lastPayloadLength = payloadLength[level];
 }
 
@@ -316,7 +308,6 @@ int32_t DefaultSkipListReader::readSkipData(const int32_t level, CL_NS(store)::I
 	} else {
 		delta = _skipStream->readVInt();
 	}
-	freqPointer[level] += _skipStream->readVInt();
 	proxPointer[level] += _skipStream->readVInt();
 
 	return delta;
