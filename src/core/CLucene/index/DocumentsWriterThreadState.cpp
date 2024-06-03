@@ -33,7 +33,9 @@
 #include "_DocumentsWriter.h"
 #include <assert.h>
 #include <iostream>
+#ifdef _AVX2
 #include <immintrin.h>
+#endif
 
 CL_NS_USE(util)
 CL_NS_USE(store)
