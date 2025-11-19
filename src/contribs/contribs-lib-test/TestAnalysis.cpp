@@ -143,6 +143,9 @@ void testCJK(CuTest *tc) {
 
     static const char* exp2[6] = {"a", "\xe5\x95\xa4\xe9\x85\x92", "\xe9\x85\x92\xe5\x95\xa4", "", "x", NULL};
     _testCJK(tc, "a\xe5\x95\xa4\xe9\x85\x92\xe5\x95\xa4x", exp2);
+
+    static const char* exp4[4] = {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "abbb", NULL};
+    _testCJK(tc, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbb", exp4);
 }
 
 void testLanguageBasedAnalyzer(CuTest* tc) {
