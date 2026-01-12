@@ -119,6 +119,9 @@ CL_NS(analysis)::Token* CJKTokenizer::next(Token* token){
 
                 // break the procedure if buffer overflowed!
                 if (length == LUCENE_MAX_WORD_LEN) {
+                    offset -= charlen;
+                    bufferIndex -= charlen;
+                    length--;
                     break;
                 }
             } else if (length > 0) {
