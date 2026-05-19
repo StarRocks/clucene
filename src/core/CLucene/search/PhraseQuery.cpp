@@ -204,7 +204,13 @@ CL_NS_DEF(search)
 			Query* termQuery = _CLNEW TermQuery(term);
 			termQuery->setBoost(getBoost());
 			Weight* ret = termQuery->_createWeight(searcher);
-			_CLLDELETE(termQuery);
+			// Ownership of termQuery is transferred to the returned TermWeight,
+			// which stores it as parentQuery. Deleting it here would leave the
+			// TermWeight with a dangling pointer and cause a double-free in
+			// IndexSearcher::_search, which itself frees weight->getQuery() when
+			// it differs from the original query (the "rewrite" cleanup path).
+			// So we intentionally do NOT delete termQuery here; the searcher
+			// will free it through that cleanup path once the search completes.
 			return ret;
 		}
 		return _CLNEW PhraseWeight(searcher,this);

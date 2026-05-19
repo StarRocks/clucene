@@ -16,7 +16,7 @@ CL_NS_DEF(index)
   SegmentTermDocs::SegmentTermDocs(const SegmentReader* _parent) : parent(_parent),freqStream(_parent->freqStream->clone()),
 		count(0),df(0),deletedDocs(_parent->deletedDocs),_doc(0),_freq(0),skipInterval(_parent->tis->getSkipInterval()),
 		maxSkipLevels(_parent->tis->getMaxSkipLevels()),skipListReader(NULL),freqBasePointer(0),proxBasePointer(0),
-		skipPointer(0),haveSkipped(false)
+		skipPointer(0),haveSkipped(false),currentFieldStoresPayloads(false),currentFieldOmitsPositions(false)
 	{
       CND_CONDITION(_parent != NULL,"Parent is NULL");
    }
@@ -57,6 +57,10 @@ CL_NS_DEF(index)
 	  count = 0;
 	  FieldInfo* fi = parent->_fieldInfos->fieldInfo(term->field());
 	  currentFieldStoresPayloads = (fi != NULL) ? fi->storePayloads : false;
+	  // Cache the field's omitPositions setting so that skipTo can forward it
+	  // to the skip list reader. The skip data layout differs based on this
+	  // bit (no proxPointer delta when positions are omitted).
+	  currentFieldOmitsPositions = (fi != NULL) ? fi->omitPositions : false;
 	  if (ti == NULL) {
 		  df = 0;
 	  } else {					// punt case
@@ -133,7 +137,7 @@ CL_NS_DEF(index)
 		  skipListReader = _CLNEW DefaultSkipListReader(freqStream->clone(), maxSkipLevels, skipInterval); // lazily clone
 
 	  if (!haveSkipped) {                          // lazily initialize skip stream
-		  skipListReader->init(skipPointer, freqBasePointer, proxBasePointer, df, currentFieldStoresPayloads);
+		  skipListReader->init(skipPointer, freqBasePointer, proxBasePointer, df, currentFieldStoresPayloads, currentFieldOmitsPositions);
 		  haveSkipped = true;
 	  }
 

@@ -133,6 +133,23 @@ void IndexWriter::setUseCompoundFile(bool value) {
   getLogMergePolicy()->setUseCompoundDocStore(value);
 }
 
+void IndexWriter::setOmitPositions(bool value) {
+  ensureOpen();
+  // Reject toggling once a session has data in flight to avoid producing
+  // inconsistent segments. Switching the flag after addDocument() could
+  // mix prox/no-prox postings within the same segment, which the on-disk
+  // layout cannot represent. Callers may always create a new IndexWriter
+  // to change this setting.
+  if (docWriter != NULL && docWriter->getNumDocsInRAM() > 0)
+    _CLTHROWA(CL_ERR_IllegalArgument,
+      "setOmitPositions must be called before any documents are added to this IndexWriter");
+  this->omitPositions = value;
+}
+
+bool IndexWriter::getOmitPositions() const {
+  return this->omitPositions;
+}
+
 void IndexWriter::setSimilarity(Similarity* similarity) {
   ensureOpen();
   this->similarity = similarity;
@@ -195,6 +212,7 @@ void IndexWriter::init(Directory* d, Analyzer* a, const bool create, const bool 
   maxFieldLength = FIELD_TRUNC_POLICY__WARN;
   infoStream = NULL;
   this->mergeFactor = this->minMergeDocs = this->maxMergeDocs = 0;
+  this->omitPositions = true;
   this->commitLockTimeout =0;
   this->closeDir = closeDir;
   this->commitPending = this->closed = this->closing = false;

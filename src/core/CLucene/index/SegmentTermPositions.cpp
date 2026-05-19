@@ -119,19 +119,29 @@ void SegmentTermPositions::skipPayload() {
 
 void SegmentTermPositions::lazySkip() {
     if (proxStream == NULL) {
+      // The parent SegmentReader did not open the .prx file because every
+      // indexed field in this segment has omitPositions=true. Position-based
+      // queries (PhraseQuery, SpanQuery) require this data and cannot run
+      // against such a field; fail loudly instead of crashing with a NPE so
+      // callers can detect the configuration mismatch immediately.
+      if (parent->proxStream == NULL) {
+        _CLTHROWA(CL_ERR_InvalidState,
+          "field was indexed with omitPositions=true; position-based queries "
+          "(e.g. PhraseQuery, SpanQuery) are not supported on this field");
+      }
       // clone lazily
       proxStream = parent->proxStream->clone();
     }
-    
+
     // we might have to skip the current payload
     // if it was not read yet
     skipPayload();
-      
+
     if (lazySkipPointer != -1) {
       proxStream->seek(lazySkipPointer);
       lazySkipPointer = -1;
     }
-     
+
     if (lazySkipProxCount != 0) {
       skipPositions(lazySkipProxCount);
       lazySkipProxCount = 0;

@@ -52,6 +52,10 @@ private:
 
 protected:
   bool currentFieldStoresPayloads;
+  // Mirrors FieldInfo::omitPositions for the currently-seeked term. Used by
+  // SegmentTermDocs::skipTo to configure DefaultSkipListReader so the skip
+  // stream is decoded with the correct layout (no prox VInt per entry).
+  bool currentFieldOmitsPositions;
 
 public:
   ///\param Parent must be a segment reader
