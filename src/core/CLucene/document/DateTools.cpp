@@ -8,6 +8,7 @@
 
 #include "DateTools.h"
 #include "CLucene/util/Misc.h"
+#include <ctime>
 
 CL_NS_USE(util)
 CL_NS_DEF(document)
@@ -15,6 +16,7 @@ CL_NS_DEF(document)
 TCHAR* DateTools::timeToString(const int64_t time, Resolution resolution /*= MILLISECOND_FORMAT*/) {
 	TCHAR* buf = _CL_NEWARRAY(TCHAR, DATETOOLS_BUFFER_SIZE);
 	timeToString(time, resolution, buf, DATETOOLS_BUFFER_SIZE);
+
 	return buf;
 }
 

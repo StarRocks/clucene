@@ -34,6 +34,12 @@ class FieldInfo :LUCENE_BASE{
 
 	bool storePayloads; // whether this field stores payloads together with term positions
 
+	// If true, term positions are not indexed for this field (the .prx file
+	// will not contain entries for it). This trades off the ability to run
+	// PhraseQuery/SpanQuery against this field for a smaller index and faster
+	// indexing. Defaults to false to preserve full backward compatibility.
+	bool omitPositions;
+
 	//Func - Constructor
 	//       Initialises FieldInfo.
 	//       na holds the name of the field
@@ -53,7 +59,8 @@ class FieldInfo :LUCENE_BASE{
 		const bool storeOffsetWithTermVector,
 		const bool storePositionWithTermVector,
 		const bool omitNorms,
-		const bool storePayloads);
+		const bool storePayloads,
+		const bool omitPositions = false);
 
     //Func - Destructor
 	//Pre  - true
@@ -87,7 +94,10 @@ public:
 		STORE_POSITIONS_WITH_TERMVECTOR = 0x4,
 		STORE_OFFSET_WITH_TERMVECTOR = 0x8,
 		OMIT_NORMS = 0x10,
-		STORE_PAYLOADS = 0x20
+		STORE_PAYLOADS = 0x20,
+		// Bit indicating that term positions are not stored for this field.
+		// When set, the segment will not contain prox data for this field.
+		OMIT_POSITIONS = 0x40
 	};
 
 	FieldInfos();
@@ -110,6 +120,11 @@ public:
 
 	/** Adds field info for a Document. */
 	void add(const CL_NS(document)::Document* doc);
+
+	/** Adds field info for a Document, forcing all fields to omit positions
+	 *  when forceOmitPositions is true. Used by IndexWriter when
+	 *  setOmitPositions(true) is in effect. */
+	void add(const CL_NS(document)::Document* doc, const bool forceOmitPositions);
 
 	/**
 	* Add fields that are indexed. Whether they have termvectors has to be specified.
@@ -150,11 +165,16 @@ public:
 	* @param storePayloads true if payloads should be stored for this field
 	*/
 	FieldInfo* add(const TCHAR* name, const bool isIndexed, const bool storeTermVector=false,
-	          const bool storePositionWithTermVector=false, const bool storeOffsetWithTermVector=false, const bool omitNorms=false, const bool storePayloads=false);
+	          const bool storePositionWithTermVector=false, const bool storeOffsetWithTermVector=false, const bool omitNorms=false, const bool storePayloads=false, const bool omitPositions=false);
 
 	// was void
 	FieldInfo* addInternal( const TCHAR* name,const bool isIndexed, const bool storeTermVector,
-		const bool storePositionWithTermVector, const bool storeOffsetWithTermVector, const bool omitNorms, const bool storePayloads);
+		const bool storePositionWithTermVector, const bool storeOffsetWithTermVector, const bool omitNorms, const bool storePayloads, const bool omitPositions = false);
+
+	/** Returns true when the segment described by this FieldInfos
+	 *  has at least one indexed field that still stores positions
+	 *  (i.e. requires a .prx file). */
+	bool hasProx() const;
 
 	int32_t fieldNumber(const TCHAR* fieldName)const;
 	

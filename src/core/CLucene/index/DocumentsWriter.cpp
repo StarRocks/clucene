@@ -552,7 +552,15 @@ void DocumentsWriter::writeSegment(std::vector<std::string>& flushedFiles) {
                                                  writer->getTermIndexInterval());
 
   IndexOutput* freqOut = directory->createOutput( (segmentName + ".frq").c_str() );
-  IndexOutput* proxOut = nullptr;
+  // Only create the prox stream when at least one indexed field still
+  // stores positions. When IndexWriter::setOmitPositions(true) is in effect
+  // hasProx() returns false and the .prx file is never produced for this
+  // segment; downstream code (appendPostings, skip list writer, segment
+  // reader) all check for a null proxOut/proxStream.
+  const bool segmentHasProx = fieldInfos->hasProx();
+  IndexOutput* proxOut = segmentHasProx
+      ? directory->createOutput( (segmentName + ".prx").c_str() )
+      : NULL;
 
   // Gather all FieldData's that have postings, across all
   // ThreadStates
@@ -602,6 +610,10 @@ void DocumentsWriter::writeSegment(std::vector<std::string>& flushedFiles) {
 
   freqOut->close();
   _CLDELETE(freqOut);
+  if (proxOut != NULL) {
+    proxOut->close();
+    _CLDELETE(proxOut);
+  }
   termsOut->close();
   _CLDELETE(termsOut);
   _CLDELETE(skipListWriter);
@@ -609,6 +621,10 @@ void DocumentsWriter::writeSegment(std::vector<std::string>& flushedFiles) {
   // Record all files we have flushed
   flushedFiles.push_back(segmentFileName(IndexFileNames::FIELD_INFOS_EXTENSION));
   flushedFiles.push_back(segmentFileName(IndexFileNames::FREQ_EXTENSION));
+  // Only advertise the .prx file when we actually produced one; the
+  // compound-file builder consumes this list verbatim.
+  if (segmentHasProx)
+    flushedFiles.push_back(segmentFileName(IndexFileNames::PROX_EXTENSION));
   flushedFiles.push_back(segmentFileName(IndexFileNames::TERMS_EXTENSION));
   flushedFiles.push_back(segmentFileName(IndexFileNames::TERMS_INDEX_EXTENSION));
 
@@ -681,6 +697,14 @@ void DocumentsWriter::appendPostings(ArrayBase<ThreadState::FieldData*>* fields,
   const int32_t fieldNumber = (*fields)[0]->fieldInfo->number;
   int32_t numFields = fields->length;
 
+  // If the field has omitPositions=true we will not touch proxOut at all,
+  // even if a prox stream was opened for the segment (some other field has
+  // positions). The skip list writer also gets its prox tracking disabled
+  // via the curStorePayloads/proxOutput nullability path.
+  const bool fieldOmitPositions =
+      (*fields)[0]->fieldInfo != NULL && (*fields)[0]->fieldInfo->omitPositions;
+  IndexOutput* const effectiveProxOut = fieldOmitPositions ? NULL : proxOut;
+
   ObjectArray<FieldMergeState> mergeStatesData(numFields);
   ValueArray<FieldMergeState*> mergeStates(numFields);
 
@@ -698,7 +722,9 @@ void DocumentsWriter::appendPostings(ArrayBase<ThreadState::FieldData*>* fields,
   memcpy(mergeStates.values,mergeStatesData.values,sizeof(FieldMergeState*) * numFields);
 
   const int32_t skipInterval = termsOut->skipInterval;
-  currentFieldStorePayloads = (*fields)[0]->fieldInfo->storePayloads;
+  // Payload storage and prox are mutually exclusive with omitPositions: a
+  // field cannot store payloads if it does not store positions.
+  currentFieldStorePayloads = fieldOmitPositions ? false : (*fields)[0]->fieldInfo->storePayloads;
 
   ValueArray<FieldMergeState*> termStates(numFields);
 
@@ -731,7 +757,10 @@ void DocumentsWriter::appendPostings(ArrayBase<ThreadState::FieldData*>* fields,
       pos++;
 
     int64_t freqPointer = freqOut->getFilePointer();
-    int64_t proxPointer = 0;
+    // When this field omits positions there is no prox stream to track, so
+    // we record 0 as the proxPointer in TermInfo and SkipListWriter ignores
+    // its proxOutput. The reader side reconstructs the same null behavior.
+    int64_t proxPointer = (effectiveProxOut != NULL) ? effectiveProxOut->getFilePointer() : 0;
 
     skipListWriter->resetSkip();
 
@@ -760,6 +789,36 @@ void DocumentsWriter::appendPostings(ArrayBase<ThreadState::FieldData*>* fields,
       lastDoc = doc;
 
       ByteSliceReader& prox = minState->prox;
+
+      // Carefully copy over the prox + payload info,
+      // changing the format to match Lucene's segment
+      // format.
+      // When the field omits positions, addPosition never wrote a prox
+      // slice, so the reader is empty and there is nothing to copy.
+      if (effectiveProxOut != NULL) {
+        for(int32_t j=0;j<termDocFreq;j++) {
+          const int32_t code = prox.readVInt();
+          if (currentFieldStorePayloads) {
+            int32_t payloadLength;
+            if ((code & 1) != 0) {
+              // This position has a payload
+              payloadLength = prox.readVInt();
+            } else
+              payloadLength = 0;
+            if (payloadLength != lastPayloadLength) {
+              effectiveProxOut->writeVInt(code|1);
+              effectiveProxOut->writeVInt(payloadLength);
+              lastPayloadLength = payloadLength;
+            } else
+              effectiveProxOut->writeVInt(code & (~1));
+            if (payloadLength > 0)
+              copyBytes(&prox, effectiveProxOut, payloadLength);
+          } else {
+            assert ( 0 == (code & 1) );
+            effectiveProxOut->writeVInt(code>>1);
+          }
+        }
+      }
 
       if (1 == termDocFreq) {
         freqOut->writeVInt(newDocCode|1);
@@ -1396,6 +1455,13 @@ bool DocumentsWriter::FieldMergeState::nextTerm(){
   else
     freq.bufferOffset = freq.upto = freq.endIndex = 0;
 
+  // When the field omits positions, no prox slice was ever allocated for
+  // this posting (proxStart == proxUpto == 0). Skip the slice-reader
+  // initialization so we don't dereference an unallocated byte block.
+  if (p->proxUpto > p->proxStart)
+    prox.init(field->threadState->postingsPool, p->proxStart, p->proxUpto);
+  else
+    prox.bufferOffset = prox.upto = prox.endIndex = 0;
   // Should always be true
   bool result = nextDoc();
   assert (result);

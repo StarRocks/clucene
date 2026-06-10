@@ -37,6 +37,10 @@ void SegmentMerger::init(){
   fieldInfos       = NULL;
   checkAbort       = NULL;
   skipInterval     = 0;
+  // Conservative default: when the constructor cannot consult an
+  // IndexWriter (e.g. the std::string overload that is never wired up),
+  // preserve historical behavior by keeping prox enabled.
+  omitPositionsForWriter = false;
 }
 
 SegmentMerger::SegmentMerger(IndexWriter* writer, const char* name, MergePolicy::OneMerge* merge){
@@ -55,6 +59,9 @@ SegmentMerger::SegmentMerger(IndexWriter* writer, const char* name, MergePolicy:
   this->termIndexInterval= writer->getTermIndexInterval();
   this->mergedDocs = 0;
   this->maxSkipLevels = 0;
+  // Capture the writer's omitPositions intent so the merger can drop prox
+  // from input segments when the writer has opted out of position storage.
+  this->omitPositionsForWriter = writer->getOmitPositions();
 }
 
 SegmentMerger::~SegmentMerger(){
@@ -155,10 +162,16 @@ void SegmentMerger::createCompoundFile(const char* filename, std::vector<std::st
   }
 
 	// Basic files
+  // .prx is conditionally produced; the writer omits it when every field
+  // has omitPositions=true. The compound-file builder bulk-includes any
+  // file we add here, so guard against listing a non-existent .prx.
+  const bool segmentHasProx = fieldInfos->hasProx();
   for (int32_t i = 0; i < IndexFileNames::COMPOUND_EXTENSIONS().length; i++) {
     const char* ext = IndexFileNames::COMPOUND_EXTENSIONS()[i];
     if (mergeDocStores || (strcmp(ext,IndexFileNames::FIELDS_EXTENSION) != 0 &&
         strcmp(ext,IndexFileNames::FIELDS_INDEX_EXTENSION) != 0 ) ){
+      if (!segmentHasProx && strcmp(ext, IndexFileNames::PROX_EXTENSION) == 0)
+        continue;
 		  files->push_back ( string(segment) + "." + ext );
     }
 	}
@@ -196,9 +209,20 @@ void SegmentMerger::addIndexed(IndexReader* reader, FieldInfos* fieldInfos, Stri
 
 	StringArrayWithDeletor::const_iterator itr = names.begin();
 	while ( itr != names.end() ){
+		// We are merging fields whose origin is a non-SegmentReader (e.g. a
+		// MultiReader) which does not surface omitPositions. If the writer
+		// requested omitPositions, force it here so the merged segment
+		// drops prox data and stays consistent with the writer's intent;
+		// otherwise preserve prox via false + the sticky-add rule.
+		const bool effectiveOmitPositions = omitPositionsForWriter;
+		// payloads require positions; drop them when positions are omitted
+		// to avoid producing a contradictory FieldInfo.
+		const bool effectiveStorePayloads =
+			storePayloads && !effectiveOmitPositions;
 		fieldInfos->add(*itr, true,
 			storeTermVectors, storePositionWithTermVector,
-			storeOffsetWithTermVector, !reader->hasNorms(*itr), storePayloads);
+			storeOffsetWithTermVector, !reader->hasNorms(*itr),
+			effectiveStorePayloads, effectiveOmitPositions);
 
 		++itr;
 	}
@@ -251,9 +275,22 @@ int32_t SegmentMerger::mergeFields() {
       SegmentReader* segmentReader = (SegmentReader*) reader;
       for (size_t j = 0; j < segmentReader->getFieldInfos()->size(); j++) {
         FieldInfo* fi = segmentReader->getFieldInfos()->fieldInfo(j);
+        // omitPositions resolution:
+        //  - writer asked to omit -> drop prox unconditionally for the
+        //    merged segment (overrides the sticky-add rule and discards
+        //    prox even from input segments that originally had it).
+        //  - writer did NOT ask to omit -> forward the input segment's
+        //    setting; the sticky-add rule then keeps prox alive when any
+        //    input segment still has it.
+        const bool effectiveOmitPositions =
+          omitPositionsForWriter ? true : fi->omitPositions;
+        // payloads need positions; clamp to false when we are stripping prox.
+        const bool effectiveStorePayloads =
+          fi->storePayloads && !effectiveOmitPositions;
         fieldInfos->add(fi->name, fi->isIndexed, fi->storeTermVector,
           fi->storePositionWithTermVector, fi->storeOffsetWithTermVector,
-          !reader->hasNorms(fi->name), fi->storePayloads);
+          !reader->hasNorms(fi->name), effectiveStorePayloads,
+          effectiveOmitPositions);
       }
     } else {
 	    StringArrayWithDeletor tmp;
@@ -429,8 +466,15 @@ void SegmentMerger::mergeTerms() {
       //Open an IndexOutput to the new Frequency File
       freqOutput = directory->createOutput( Misc::segmentname(segment.c_str(),".frq").c_str() );
 
-      //Open an IndexOutput to the new Prox File
-      proxOutput = directory->createOutput( Misc::segmentname(segment.c_str(),".prx").c_str() );
+      // Only open a prox stream when at least one field still indexes
+      // positions in the merged result. If every field in the merged
+      // FieldInfos has omitPositions=true, the merged segment will not
+      // contain a .prx file. SegmentInfo::files() uses dir->fileExists, so
+      // the absent file is handled transparently downstream.
+      if (fieldInfos->hasProx())
+        proxOutput = directory->createOutput( Misc::segmentname(segment.c_str(),".prx").c_str() );
+      else
+        proxOutput = NULL;
 
       //Instantiate  a new termInfosWriter which will write in directory
       //for the segment name segment using the new merged fieldInfos
@@ -441,6 +485,9 @@ void SegmentMerger::mergeTerms() {
 
       skipInterval = termInfosWriter->skipInterval;
       maxSkipLevels = termInfosWriter->maxSkipLevels;
+      // proxOutput may be NULL; DefaultSkipListWriter handles that and
+      // skips emitting the prox-pointer column, which matches what
+      // DefaultSkipListReader expects when initialized with omitPositions.
       skipListWriter = _CLNEW DefaultSkipListWriter(skipInterval, maxSkipLevels, mergedDocs, freqOutput, proxOutput);
       queue = _CLNEW SegmentMergeQueue(readers.size());
 
@@ -578,17 +625,16 @@ int32_t SegmentMerger::mergeTermInfo( SegmentMergeInfo** smis, int32_t n){
 //Pre  - smis != NULL and it contains segments that are positioned at the same term.
 //       n is equal to the number of SegmentMergeInfo instances in smis
 //       freqOutput != NULL
-//       proxOutput != NULL
+//       proxOutput may be NULL when the merged segment has no prox fields
 //Post - The TermInfo of a term has been merged
 
 	CND_PRECONDITION(smis != NULL, "smis is NULL");
 	CND_PRECONDITION(freqOutput != NULL, "freqOutput is NULL");
-	CND_PRECONDITION(proxOutput != NULL, "proxOutput is NULL");
 
   //Get the file pointer of the IndexOutput to the Frequency File
   int64_t freqPointer = freqOutput->getFilePointer();
-  //Get the file pointer of the IndexOutput to the Prox File
-  int64_t proxPointer = proxOutput->getFilePointer();
+  //Get the file pointer of the IndexOutput to the Prox File (0 when absent)
+  int64_t proxPointer = (proxOutput != NULL) ? proxOutput->getFilePointer() : 0;
 
   //Process postings from multiple segments all positioned on the same term.
   int32_t df = appendPostings(smis, n);
@@ -616,18 +662,23 @@ int32_t SegmentMerger::appendPostings(SegmentMergeInfo** smis, int32_t n){
 //Pre  - smis != NULL and it contains segments that are positioned at the same term.
 //       n is equal to the number of SegmentMergeInfo instances in smis
 //       freqOutput != NULL
-//       proxOutput != NULL
+//       proxOutput may be NULL when the merged field has omitPositions=true
 //Post - Returns number of documents across all segments where this term was found
 
   CND_PRECONDITION(smis != NULL, "smis is NULL");
   CND_PRECONDITION(freqOutput != NULL, "freqOutput is NULL");
-  CND_PRECONDITION(proxOutput != NULL, "proxOutput is NULL");
 
   int32_t lastDoc = 0;
   int32_t df = 0;       //Document Counter
 
   skipListWriter->resetSkip();
-  bool storePayloads = fieldInfos->fieldInfo(smis[0]->term->field())->storePayloads;
+  FieldInfo* fieldInfoForTerm = fieldInfos->fieldInfo(smis[0]->term->field());
+  // A field cannot both store payloads and omit positions; the writer-side
+  // FieldInfos enforces this when fields are added. We still defensively
+  // clamp storePayloads here so a malformed segment cannot trick us into
+  // writing payload metadata when the prox output is absent.
+  const bool fieldOmitPositions = (fieldInfoForTerm != NULL) && fieldInfoForTerm->omitPositions;
+  bool storePayloads = (fieldInfoForTerm != NULL) && fieldInfoForTerm->storePayloads && !fieldOmitPositions;
   int32_t lastPayloadLength = -1;   // ensures that we write the first length
 
   SegmentMergeInfo* smi = NULL;
@@ -689,32 +740,38 @@ int32_t SegmentMerger::appendPostings(SegmentMergeInfo** smis, int32_t n){
       /** See {@link DocumentWriter#writePostings(Posting[], String)} for
       *  documentation about the encoding of positions and payloads
       */
-      int32_t lastPosition = 0;
-      // write position deltas
-      for (int32_t j = 0; j < freq; j++) {
-        //Get the next position
-        int32_t position = postings->nextPosition();
-        int32_t delta = position - lastPosition;
-        if (storePayloads) {
-          size_t payloadLength = postings->getPayloadLength();
-          if (payloadLength == lastPayloadLength) {
-            proxOutput->writeVInt(delta * 2);
-          } else {
-            proxOutput->writeVInt(delta * 2 + 1);
-            proxOutput->writeVInt(payloadLength);
-            lastPayloadLength = payloadLength;
-          }
-          if (payloadLength > 0) {
-          	if ( payloadBuffer.length < payloadLength ){
-              payloadBuffer.resize(payloadLength);
+      // When the merged field omits positions the input segments also
+      // never recorded prox data, so postings->nextPosition() must not be
+      // invoked (it would attempt to read from a non-existent .prx stream
+      // on the input side). Likewise we have no proxOutput to write to.
+      if (!fieldOmitPositions) {
+        int32_t lastPosition = 0;
+        // write position deltas
+        for (int32_t j = 0; j < freq; j++) {
+          //Get the next position
+          int32_t position = postings->nextPosition();
+          int32_t delta = position - lastPosition;
+          if (storePayloads) {
+            size_t payloadLength = postings->getPayloadLength();
+            if (payloadLength == lastPayloadLength) {
+              proxOutput->writeVInt(delta * 2);
+            } else {
+              proxOutput->writeVInt(delta * 2 + 1);
+              proxOutput->writeVInt(payloadLength);
+              lastPayloadLength = payloadLength;
             }
-            postings->getPayload(payloadBuffer.values);
-            proxOutput->writeBytes(payloadBuffer.values, payloadLength);
+            if (payloadLength > 0) {
+              if ( payloadBuffer.length < payloadLength ){
+                payloadBuffer.resize(payloadLength);
+              }
+              postings->getPayload(payloadBuffer.values);
+              proxOutput->writeBytes(payloadBuffer.values, payloadLength);
+            }
+          } else {
+            proxOutput->writeVInt(delta);
           }
-        } else {
-          proxOutput->writeVInt(delta);
+          lastPosition = position;
         }
-        lastPosition = position;
       }
     }
   }

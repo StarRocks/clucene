@@ -247,6 +247,14 @@ class CLUCENE_EXPORT IndexWriter:LUCENE_BASE {
   int32_t maxMergeDocs;
   int32_t termIndexInterval;
 
+  // When true, all newly-indexed fields will not have their term positions
+  // stored (i.e. no .prx file is produced for new segments). Defaults to
+  // true: by default this writer does NOT produce .prx files, which makes
+  // PhraseQuery / SpanQuery and other position-based queries unusable on
+  // newly-created segments. Call setOmitPositions(false) before adding any
+  // document if you need to keep proximity information.
+  bool omitPositions;
+
   int64_t writeLockTimeout;
   int64_t commitLockTimeout;
 
@@ -564,6 +572,34 @@ public:
    */
   void setUseCompoundFile(bool value);
 
+
+  /**
+   * Expert: If set to <code>true</code>, the IndexWriter will not write
+   * term position information (the .prx file) for any field added to this
+   * writer. This produces a smaller and faster-to-build index but disables
+   * queries that depend on positions such as {@link PhraseQuery} and
+   * {@link SpanQuery}; queries that only need document/frequency information
+   * (e.g. {@link TermQuery}, {@link BooleanQuery}, range queries) continue
+   * to work as before.
+   *
+   * <p>This setting is "sticky": it must be configured before any document
+   * is added to the writer, and is persisted into the segment so that
+   * merging segments with mixed settings keeps prox data only when at
+   * least one input segment indexed it.
+   *
+   * <p>The default is <code>true</code>: this writer does NOT emit .prx
+   * files unless you explicitly call <code>setOmitPositions(false)</code>
+   * before adding any document. Note that with the default, position-based
+   * queries (PhraseQuery, SpanQuery, etc.) cannot be executed on segments
+   * produced by this writer.
+   */
+  void setOmitPositions(bool value);
+
+  /**
+   * Returns the current setOmitPositions value.
+   * @see #setOmitPositions
+   */
+  bool getOmitPositions() const;
 
   /** Expert: Set the Similarity implementation used by this IndexWriter.
    *

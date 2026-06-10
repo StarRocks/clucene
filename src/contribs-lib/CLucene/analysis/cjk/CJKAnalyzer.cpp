@@ -27,6 +27,16 @@ CJKTokenizer::CJKTokenizer(Reader* in):
 	ignoreSurrogates = true;
 }
 
+void CJKTokenizer::reset(Reader* in) {
+    Tokenizer::reset(in);
+    tokenType = Token::getDefaultType();
+    offset = 0;
+    bufferIndex = 0;
+    dataLen = 0;
+    preIsTokened = false;
+    ignoreSurrogates = true;
+}
+
 CL_NS(analysis)::Token* CJKTokenizer::next(Token* token){
     /** how many character(s) has been stored in buffer */
     int32_t length = 0;

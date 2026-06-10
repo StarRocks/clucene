@@ -38,8 +38,10 @@ private:
     /**
      * character buffer, store the characters which are used to compose <br>
      * the returned Token
+     *
+     * next() appends a trailing NUL, so reserve one extra slot.
      */
-    TCHAR buffer[LUCENE_MAX_WORD_LEN];
+    TCHAR buffer[LUCENE_MAX_WORD_LEN + 1];
 
     /**
      * I/O buffer, used to store the content of the input(one of the <br>
@@ -83,6 +85,7 @@ public:
      *
      */
 	CL_NS(analysis)::Token* next(CL_NS(analysis)::Token* token);
+    void reset(CL_NS(util)::Reader* input);
 
 	bool getIgnoreSurrogates(){ return ignoreSurrogates; };
 	void setIgnoreSurrogates(bool ignoreSurrogates){ this->ignoreSurrogates = ignoreSurrogates; };

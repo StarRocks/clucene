@@ -29,14 +29,16 @@ FieldInfo::FieldInfo(	const TCHAR* _fieldName,
 						const bool _storeOffsetWithTermVector,
 						const bool _storePositionWithTermVector,
 						const bool _omitNorms,
-						const bool _storePayloads):
+						const bool _storePayloads,
+						const bool _omitPositions):
 	name(CLStringIntern::intern(_fieldName )),
 	isIndexed(_isIndexed),
 	number(_fieldNumber),
 	storeTermVector(_storeTermVector),
 	storeOffsetWithTermVector(_storeOffsetWithTermVector),
 	storePositionWithTermVector(_storePositionWithTermVector),
-	omitNorms(_omitNorms), storePayloads(_storePayloads)
+	omitNorms(_omitNorms), storePayloads(_storePayloads),
+	omitPositions(_omitPositions)
 {
 }
 
@@ -46,7 +48,7 @@ FieldInfo::~FieldInfo(){
 
 FieldInfo* FieldInfo::clone() {
 	return _CLNEW FieldInfo(name, isIndexed, number, storeTermVector, storePositionWithTermVector,
-		storeOffsetWithTermVector, omitNorms, storePayloads);
+		storeOffsetWithTermVector, omitNorms, storePayloads, omitPositions);
 }
 
 FieldInfos::FieldInfos():
@@ -83,12 +85,17 @@ FieldInfos* FieldInfos::clone()
 }
 
 void FieldInfos::add(const Document* doc) {
+  add(doc, false);
+}
+
+void FieldInfos::add(const Document* doc, const bool forceOmitPositions) {
   const Document::FieldsType& fields = *doc->getFields();
 	Field* field;
   for ( Document::FieldsType::const_iterator itr = fields.begin() ; itr != fields.end() ; itr++ ){
 			field = *itr;
 			add(field->name(), field->isIndexed(), field->isTermVectorStored(), field->isStorePositionWithTermVector(),
-              field->isStoreOffsetWithTermVector(), field->getOmitNorms());
+              field->isStoreOffsetWithTermVector(), field->getOmitNorms(), /*storePayloads*/ false,
+              /*omitPositions*/ forceOmitPositions);
 	}
 }
 
@@ -114,12 +121,12 @@ void FieldInfos::add(const TCHAR** names,const bool isIndexed, const bool storeT
 
 FieldInfo* FieldInfos::add( const TCHAR* name, const bool isIndexed, const bool storeTermVector,
 		const bool storePositionWithTermVector, const bool storeOffsetWithTermVector, const bool omitNorms,
-		const bool storePayloads) {
+		const bool storePayloads, const bool omitPositions) {
 	FieldInfo* fi = fieldInfo(name);
 	if (fi == NULL) {
-		return addInternal(name, isIndexed, storeTermVector, 
-			storePositionWithTermVector, 
-			storeOffsetWithTermVector, omitNorms, storePayloads);
+		return addInternal(name, isIndexed, storeTermVector,
+			storePositionWithTermVector,
+			storeOffsetWithTermVector, omitNorms, storePayloads, omitPositions);
 	} else {
 		if (fi->isIndexed != isIndexed) {
 			fi->isIndexed = true;                      // once indexed, always index
@@ -139,19 +146,39 @@ FieldInfo* FieldInfos::add( const TCHAR* name, const bool isIndexed, const bool 
 		if (fi->storePayloads != storePayloads) {
 			fi->storePayloads = true;
 		}
+		// Sticky toward omit: as soon as any caller asks to omit positions,
+		// the merged FieldInfo also omits. We cannot synthesize positions
+		// for an input that lacks them, so a mixed merge must drop prox
+		// rather than crash later in appendPostings/SegmentTermPositions.
+		if (omitPositions && !fi->omitPositions) {
+			fi->omitPositions = true;
+			// Payloads are encoded inside the prox stream; drop the flag
+			// when prox is being dropped to keep FieldInfo self-consistent.
+			fi->storePayloads = false;
+		}
 	}
 	return fi;
 }
 
 FieldInfo* FieldInfos::addInternal( const TCHAR* name, const bool isIndexed, const bool storeTermVector,
 		const bool storePositionWithTermVector, const bool storeOffsetWithTermVector,
-		const bool omitNorms, const bool storePayloads) {
+		const bool omitNorms, const bool storePayloads, const bool omitPositions) {
 
-	FieldInfo* fi = _CLNEW FieldInfo(name, isIndexed, byNumber.size(), storeTermVector, 
-		storePositionWithTermVector, storeOffsetWithTermVector, omitNorms, storePayloads);
+	FieldInfo* fi = _CLNEW FieldInfo(name, isIndexed, byNumber.size(), storeTermVector,
+		storePositionWithTermVector, storeOffsetWithTermVector, omitNorms, storePayloads, omitPositions);
 	byNumber.push_back(fi);
 	byName.put( fi->name, fi);
 	return fi;
+}
+
+bool FieldInfos::hasProx() const {
+	const size_t n = size();
+	for (size_t i = 0; i < n; ++i) {
+		FieldInfo* fi = fieldInfo(static_cast<int32_t>(i));
+		if (fi != NULL && fi->isIndexed && !fi->omitPositions)
+			return true;
+	}
+	return false;
 }
 
 int32_t FieldInfos::fieldNumber(const TCHAR* fieldName)const {
@@ -210,6 +237,11 @@ void FieldInfos::write(IndexOutput* output) const{
  		if (fi->storeOffsetWithTermVector) bits |= STORE_OFFSET_WITH_TERMVECTOR;
  		if (fi->omitNorms) bits |= OMIT_NORMS;
 		if (fi->storePayloads) bits |= STORE_PAYLOADS;
+		// The OMIT_POSITIONS bit is forward-only: old readers ignore unknown
+		// bits, so they will simply treat the field as if positions were still
+		// indexed (and would fail when actually opening the missing .prx file).
+		// Default value of false keeps the on-disk byte identical to legacy.
+		if (fi->omitPositions) bits |= OMIT_POSITIONS;
 
 	    output->writeString(fi->name,_tcslen(fi->name));
 	    output->writeByte(bits);
@@ -219,7 +251,7 @@ void FieldInfos::write(IndexOutput* output) const{
 void FieldInfos::read(IndexInput* input) {
 	int32_t size = input->readVInt();//read in the size
     uint8_t bits;
-	bool isIndexed,storeTermVector,storePositionsWithTermVector,storeOffsetWithTermVector,omitNorms,storePayloads;
+	bool isIndexed,storeTermVector,storePositionsWithTermVector,storeOffsetWithTermVector,omitNorms,storePayloads,omitPositions;
 	for (int32_t i = 0; i < size; ++i){
 	    TCHAR* name = input->readString(); //we could read name into a string buffer, but we can't be sure what the maximum field length will be.
 		bits = input->readByte();
@@ -229,8 +261,9 @@ void FieldInfos::read(IndexInput* input) {
    		storeOffsetWithTermVector = (bits & STORE_OFFSET_WITH_TERMVECTOR) != 0;
    		omitNorms = (bits & OMIT_NORMS) != 0;
 		storePayloads = (bits & STORE_PAYLOADS) != 0;
-   
-   		addInternal(name, isIndexed, storeTermVector, storePositionsWithTermVector, storeOffsetWithTermVector, omitNorms, storePayloads);
+		omitPositions = (bits & OMIT_POSITIONS) != 0;
+
+		addInternal(name, isIndexed, storeTermVector, storePositionsWithTermVector, storeOffsetWithTermVector, omitNorms, storePayloads, omitPositions);
    		_CLDELETE_CARRAY(name);
 	}
 }

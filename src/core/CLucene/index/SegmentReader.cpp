@@ -197,6 +197,14 @@ CL_NS_DEF(index)
       // make sure that all index files have been read or are kept open
       // so that if an index update removes them we'll still have them
       freqStream = cfsDir->openInput( (segment + ".frq").c_str(), readBufferSize);
+      // Only open the prox stream when the segment actually contains a
+      // .prx file. When every indexed field has omitPositions=true the
+      // writer skipped creating it; opening here would raise IOException.
+      // SegmentTermPositions::nextPosition guards against use when null.
+      if (_fieldInfos->hasProx())
+        proxStream = cfsDir->openInput( (segment + ".prx").c_str(), readBufferSize);
+      else
+        proxStream = NULL;
       openNorms(cfsDir, readBufferSize);
 
       if (doOpenStores && _fieldInfos->hasVectors()) { // open term vector files only as needed

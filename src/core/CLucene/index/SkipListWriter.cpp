@@ -95,6 +95,9 @@ void DefaultSkipListWriter::setSkipData(int32_t doc, bool storePayloads, int32_t
   this->curStorePayloads = storePayloads;
   this->curPayloadLength = payloadLength;
   this->curFreqPointer = freqOutput->getFilePointer();
+  // proxOutput is NULL when the field omits positions; the prox pointer is
+  // unused in that case (writeSkipData skips writing it as well).
+  this->curProxPointer = (proxOutput != NULL) ? proxOutput->getFilePointer() : 0;
 }
 
 void DefaultSkipListWriter::resetSkip() {
@@ -102,6 +105,10 @@ void DefaultSkipListWriter::resetSkip() {
   memset(lastSkipDoc, 0, numberOfSkipLevels * sizeof(int32_t) );
   Arrays<int32_t>::fill(lastSkipPayloadLength, numberOfSkipLevels, -1);  // we don't have to write the first length in the skip list
   Arrays<int64_t>::fill(lastSkipFreqPointer,   numberOfSkipLevels, freqOutput->getFilePointer());
+  // proxOutput may be NULL for omit-positions fields; mirror the value used
+  // by setSkipData/writeSkipData so the deltas remain zero.
+  Arrays<int64_t>::fill(lastSkipProxPointer, numberOfSkipLevels,
+                        (proxOutput != NULL) ? proxOutput->getFilePointer() : 0);
 }
 
 void DefaultSkipListWriter::writeSkipData(int32_t level, IndexOutput* skipBuffer){
@@ -143,7 +150,12 @@ void DefaultSkipListWriter::writeSkipData(int32_t level, IndexOutput* skipBuffer
     skipBuffer->writeVInt(curDoc - lastSkipDoc[level]);
   }
   skipBuffer->writeVInt((int32_t) (curFreqPointer - lastSkipFreqPointer[level]));
-  skipBuffer->writeVInt((int32_t) (curProxPointer - lastSkipProxPointer[level]));
+  // Only emit the prox delta when this field actually owns prox data. The
+  // matching reader (DefaultSkipListReader::readSkipData, initialized with
+  // omitPositions=true) skips reading this VInt in the same case so the
+  // skip-list payload stays byte-for-byte consistent.
+  if (proxOutput != NULL)
+    skipBuffer->writeVInt((int32_t) (curProxPointer - lastSkipProxPointer[level]));
 
   lastSkipDoc[level] = curDoc;
   //System.out.println("write doc at level " + level + ": " + curDoc);

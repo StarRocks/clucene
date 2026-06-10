@@ -200,12 +200,18 @@ void DocumentsWriter::ThreadState::init(Document* doc, int32_t docID) {
   // seen before (eg suddenly turning on norms or
   // vectors, etc.):
 
+  // Resolve the writer-level omit-positions setting once per document init.
+  // This is intentionally sticky across the segment: callers cannot toggle
+  // it after addDocument(), which IndexWriter::setOmitPositions enforces.
+  const bool omitPositionsForWriter = _parent->writer->getOmitPositions();
+
   for(int32_t i=0;i<numDocFields;i++) {
     Field* field = docFields[i];
 
     FieldInfo* fi = _parent->fieldInfos->add(field->name(), field->isIndexed(), field->isTermVectorStored(),
                                   field->isStorePositionWithTermVector(), field->isStoreOffsetWithTermVector(),
-                                  field->getOmitNorms(), false);
+                                  field->getOmitNorms(), /*storePayloads*/ false,
+                                  /*omitPositions*/ omitPositionsForWriter);
     if (fi->isIndexed && !fi->omitNorms) {
       // Maybe grow our buffered norms
       if (_parent->norms.length <= fi->number) {
@@ -1022,6 +1028,12 @@ void DocumentsWriter::ThreadState::FieldData::addPosition(Token* token) {
 
   const Payload* payload = token->getPayload();
 
+  // When this field has omitPositions=true we skip every interaction with
+  // the prox byte stream: no slice allocation, no writeProx*, no payload
+  // capture. The freq stream and term-vector code paths are unaffected so
+  // TermQuery and term-vector consumers continue to work normally.
+  const bool fieldOmitPositions = (fieldInfo != NULL && fieldInfo->omitPositions);
+
   // Get the text of this term.  Term can either
   // provide a String token or offset into a TCHAR*
   // array
@@ -1096,6 +1108,8 @@ void DocumentsWriter::ThreadState::FieldData::addPosition(Token* token) {
           }
         }
 
+        proxCode = position;
+
         threadState->p->docFreq = 1;
 
         // Store code so we can write this after we're
@@ -1107,6 +1121,8 @@ void DocumentsWriter::ThreadState::FieldData::addPosition(Token* token) {
          //std::cout << "    seen before (same docID=" << threadState->docID << ") proxUpto=" << threadState->p->proxUpto << "\n";
 
         threadState->p->docFreq++;
+
+        proxCode = position - threadState->p->lastPosition;
 
         if (doVectors) {
           threadState->vector = threadState->p->vector;
@@ -1174,6 +1190,14 @@ void DocumentsWriter::ThreadState::FieldData::addPosition(Token* token) {
       const int32_t upto1 = threadState->postingsPool->newSlice(firstSize);
       threadState->p->freqStart = threadState->p->freqUpto = threadState->postingsPool->tOffset + upto1;
 
+      // Only allocate prox bytes when this field actually stores positions.
+      if (!fieldOmitPositions) {
+        const int32_t upto2 = threadState->postingsPool->newSlice(firstSize);
+        threadState->p->proxStart = threadState->p->proxUpto = threadState->postingsPool->tOffset + upto2;
+      } else {
+        threadState->p->proxStart = threadState->p->proxUpto = 0;
+      }
+
       threadState->p->lastDocCode = threadState->docID << 1;
       threadState->p->lastDocID = threadState->docID;
       threadState->p->docFreq = 1;
@@ -1185,7 +1209,27 @@ void DocumentsWriter::ThreadState::FieldData::addPosition(Token* token) {
           offsetEnd = offset + token->endOffset();
         }
       }
+   
+      proxCode = position;
     }
+
+    if (!fieldOmitPositions) {
+      threadState->proxUpto = threadState->p->proxUpto & BYTE_BLOCK_MASK;
+      threadState->prox = threadState->postingsPool->buffers[threadState->p->proxUpto >> BYTE_BLOCK_SHIFT];
+      assert (threadState->prox != NULL);
+
+      if (payload != NULL && payload->length() > 0) {
+        threadState->writeProxVInt((proxCode<<1)|1);
+        threadState->writeProxVInt(payload->length());
+        threadState->writeProxBytes(payload->getData().values, payload->getOffset(), payload->length());
+        fieldInfo->storePayloads = true;
+      } else
+        threadState->writeProxVInt(proxCode<<1);
+
+      threadState->p->proxUpto = threadState->proxUpto + (threadState->p->proxUpto & BYTE_BLOCK_NOT_MASK);
+    }
+    // proxCode is intentionally unused when positions are omitted; the
+    // freq stream still carries doc/freq deltas so TermQuery scoring works.
 
     threadState->p->lastPosition = position++;
 

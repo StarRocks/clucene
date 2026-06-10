@@ -69,6 +69,12 @@ class SegmentMerger:LUCENE_BASE {
   int32_t maxSkipLevels;
   DefaultSkipListWriter* skipListWriter;
 
+  // Snapshot of the originating IndexWriter's omitPositions setting. When
+  // true the merged segment will not produce a .prx file, even if input
+  // segments contained position data (prox is dropped on purpose, matching
+  // the writer's stated preference).
+  bool omitPositionsForWriter;
+
 public:
   static const uint8_t NORMS_HEADER[]; 
   static const int NORMS_HEADER_length;
