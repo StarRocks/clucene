@@ -308,7 +308,11 @@ int32_t DefaultSkipListReader::readSkipData(const int32_t level, CL_NS(store)::I
 	} else {
 		delta = _skipStream->readVInt();
 	}
-	proxPointer[level] += _skipStream->readVInt();
+	// Must match DefaultSkipListWriter::writeSkipData: DocSkip [, PayloadLength?], FreqSkip, ProxSkip.
+	// Accumulate FreqSkip in freqPointer for freqStream->seek() after skipTo(); consume ProxSkip to
+	// keep the skip stream aligned (proxPointer is not allocated on the term-docs path).
+	freqPointer[level] += _skipStream->readVInt();
+	_skipStream->readVInt();
 
 	return delta;
 }
