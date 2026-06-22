@@ -3,7 +3,6 @@
  * Exercises ConjunctionScorer::skipTo -> SegmentTermDocs -> DefaultSkipListReader.
  *------------------------------------------------------------------------------*/
 #include "test.h"
-#include "QueryUtils.h"
 #include "CheckHits.h"
 #include "CLucene/analysis/Analyzers.h"
 #include "CLucene/index/MergePolicy.h"
