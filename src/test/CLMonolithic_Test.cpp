@@ -45,6 +45,7 @@
 #include "search/spans/TestSpansAdvanced.cpp"
 #include "search/spans/TestSpans.cpp"
 #include "search/TestBoolean.cpp"
+#include "search/TestMatchAll.cpp"
 #include "search/TestConstantScoreRangeQuery.cpp"
 #include "search/TestDateFilter.cpp"
 #include "search/TestExplanations.cpp"

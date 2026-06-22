@@ -73,6 +73,7 @@ CuSuite *testField(void);
 CuSuite *testNumberTools(void);
 CuSuite *testDateTools(void);
 CuSuite *testBoolean(void);
+CuSuite *testMatchAll(void);
 CuSuite *testBitSet(void);
 CuSuite *testExtractTerms(void);
 CuSuite *testSpanQueries(void);

@@ -48,6 +48,7 @@ SET(test_files ./tests.cpp
 ./search/MockScorer.h
 ./search/MockHitCollector.h
 ./search/TestBoolean.cpp
+./search/TestMatchAll.cpp
 ./search/TestDateFilter.cpp
 ./search/TestForDuplicates.cpp
 ./search/TestQueries.cpp
